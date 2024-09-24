@@ -1,4 +1,4 @@
-#Version 9/3/24 JDL
+#Version 9/24/24 JDL
 import os, sys
 import pandas as pd
 from openpyxl import load_workbook
@@ -16,7 +16,6 @@ initializes lists column name mapping and for preflight checks
 JDL 9/3/24
 ================================================================================
 """
-
 class ProjectTables():
     """
     Collection of imported or generated data tables for a project
@@ -37,9 +36,12 @@ class ProjectTables():
 
         #Create example tables (see demo.ipynb or tests_projtables.py for usage
         self.pf_input1 = files.path_data + lst_files[0]
-        self.Table1 = Table(self.spf_input1, 'Table1', 'raw_table', 'idx')
-        self.Table2 = Table(self.spf_input2, 'Table2', 'first_sheet', 'idx')
-        self.Table3 = Table(self.spf_input2, 'Table3', 'second_sheet', 'idx')
+        self.pf_input2 = ''
+        self.pf_input3 = ''
+
+        self.Table1 = Table(self.pf_input1, 'Table1', 'raw_table', 'idx')
+        self.Table2 = Table(self.pf_input2, 'Table2', 'first_sheet', 'idx')
+        self.Table3 = Table(self.pf_input2, 'Table3', 'second_sheet', 'idx')
 
         #Set lists of inputs and outputs
         self.lstImports = [self.Table2]
@@ -79,7 +81,7 @@ class ProjectTables():
             tbl.ImportExcelDf()
 
             if self.IsPrint:
-                print('\nImported', tbl.name, tbl.sPF, tbl.sht)
+                print('\nImported', tbl.name, tbl.pf, tbl.sht)
                 print(tbl.df)
     
     def ImportRawInputs(self):
@@ -91,7 +93,7 @@ class ProjectTables():
         for tbl in self.lstRawImports:
 
             #Create workbook object and select sheet
-            wb = load_workbook(filename=tbl.sPF, read_only=True)
+            wb = load_workbook(filename=tbl.pf, read_only=True)
             ws = wb[tbl.sht]
 
             # Convert the data to a list and convert to a DataFrame
@@ -168,7 +170,7 @@ class CheckInputs:
 
 """
 ================================================================================
-RowMajorTbl Class - for parsing row major raw data
+RowMajorTbl Class - for parsing row major raw data single block
 ================================================================================
 """
 class RowMajorTbl():
@@ -259,21 +261,24 @@ class RowMajorTbl():
     def SubsetCols(self):
         """
         Use tbl.import_col_map to subset columns based on header.
-        JDL 3/4/24
+        JDL 9/24/24
         """
-        cols_keep = list(self.tbl.import_col_map.keys())
-        self.tbl.df = self.tbl.df[cols_keep]
+        #Use import_col_map if specified
+        if len(self.tbl.import_col_map) > 0:
+            cols_keep = list(self.tbl.import_col_map.keys())
+            self.tbl.df = self.tbl.df[cols_keep]
 
     def RenameCols(self):
         """
         Use tbl.import_col_map to rename columns.
-        JDL 3/4/24
+        JDL 3/4/24; Modified 9/24/24
         """
-        self.tbl.df.rename(columns=self.tbl.import_col_map, inplace=True)
+        if len(self.tbl.import_col_map) > 0:
+            self.tbl.df.rename(columns=self.tbl.import_col_map, inplace=True)
 
     def SetDefaultIndex(self):
         """
         Set the table's default index
         JDL 3/4/24
         """
-        self.tbl.df = self.tbl.df.set_index(self.tbl.ColNameIdx)
+        self.tbl.df = self.tbl.df.set_index(self.tbl.idx_col_name)

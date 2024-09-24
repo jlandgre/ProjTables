@@ -1,5 +1,5 @@
-#Version 3/4/24
-#python -m pytest test_importtables.py -v -s
+#Version 9/24/24
+#python -m pytest test_parsetables.py -v -s
 import sys, os
 import pandas as pd
 import numpy as np
@@ -13,21 +13,157 @@ if not path_libs in sys.path: sys.path.append(path_libs)
 
 print('\n', path_libs)
 from projfiles import Files
-from projtables_import import ProjectTables
-from projtables_import import RowMajorTbl
-import pd_util
+from projtables import ProjectTables
+from projtables import RowMajorTbl
 
 """
 ================================================================================
-Importing Raw Data with ProjectTables class 
+Importing/Parsing Raw Data with ProjectTables class 
 ================================================================================
 """
-subdir_tests = 'tbls_import_test_data'
+subdir_tests = 'test_data'
 
 @pytest.fixture
 def files():
     return Files('tbls', IsTest=True, subdir_tests=subdir_tests)
 
+"""
+================================================================================
+RowMajorTbl Class - for parsing row major raw data
+(Survey Monkey report format)
+================================================================================
+"""
+@pytest.fixture
+def tbls_survey(files):
+    """
+    Using .ImportRawInputs() method to import sheet whose data may not start at A1
+    """
+    tbls = ProjectTables(files, ['tbl1_survey.xlsx'])
+    tbls.ImportRawInputs()
+
+    #Override hard-coded demo for tbls.Table1
+    tbls.Table1.import_col_map = {}
+    return tbls
+
+@pytest.fixture
+def dParseParams_tbl1_survey():
+    """
+    Return a dictionary of parameters for parsing the first table
+    """
+    dParseParams = {}
+    dParseParams['flag_start_bound'] = 'Answer Choices'
+    dParseParams['flag_end_bound'] = '<blank>'
+    dParseParams['icol_start_bound'] = 0
+    dParseParams['icol_end_bound'] = 0
+    dParseParams['iheader_rowoffset_from_flag'] = 0
+    dParseParams['idata_rowoffset_from_flag'] = 1
+    return dParseParams
+
+def test_survey_tbls_fixture(tbls_survey):    
+    """
+    Test that the tbl1_survey.xlsx was imported correctly
+    JDL 9/24/24
+    """
+    assert tbls_survey.Table1.df.shape == (20, 3)
+
+@pytest.fixture
+def row_maj_tbl1_survey(tbls_survey, dParseParams_tbl1_survey):
+    """
+    Instance RowMajorTbl parsing class for survey data
+    JDL 9/24/24
+    """
+    return RowMajorTbl(dParseParams_tbl1_survey, tbls_survey.Table1)
+
+def test_survey_ParseTblProcedure(row_maj_tbl1_survey):
+    """
+    Parse the survey table and check the final state of the table.
+    JDL 9/24/24
+    """
+    row_maj_tbl1_survey.ParseTblProcedure()
+
+    #Check resulting .tbl.df relative to tbl1_survey.xlsx
+    #assert len(row_maj_tbl1_survey.tbl.df) == 19
+    #assert list(row_maj_tbl1_survey.tbl.df.iloc[0]) == ['Answer Choices', '1', 'Strongly Disagree']
+    #assert list(row_maj_tbl1_survey.tbl.df.iloc[-1]) == ['Answer Choices', '5', 'Strongly Agree']
+
+    #print('\n\nraw imported table\n')
+    #print(row_maj_tbl1_survey.df_raw)
+    print('\nparsed table\n')
+    print(row_maj_tbl1_survey.tbl.df)
+    print('\n\n')
+
+def test_SubsetCols(row_maj_tbl1_survey):
+    """
+    Use tbl.import_col_map to subset columns based on header.
+    JDL 9/24/24
+    """
+    row_maj_tbl1_survey.FindFlagStartBound()
+    row_maj_tbl1_survey.FindFlagEndBound()
+    row_maj_tbl1_survey.ReadHeader()
+    row_maj_tbl1_survey.SubsetDataRows()
+    row_maj_tbl1_survey.SubsetCols()
+
+    # Assert that column names are correct before renaming
+    lst_expected = ['Answer Choices', 'Response Percent', 'Responses']
+    assert list(row_maj_tbl1_survey.tbl.df.columns) == lst_expected
+
+def test_survey_SubsetDataRows(row_maj_tbl1_survey):
+    """
+    Subset rows based on flags and idata_rowoffset_from_flag.
+    JDL 9/24/24
+    """
+    row_maj_tbl1_survey.FindFlagStartBound()
+    row_maj_tbl1_survey.FindFlagEndBound()
+    row_maj_tbl1_survey.ReadHeader()
+    row_maj_tbl1_survey.SubsetDataRows()
+
+    # Check resulting .tbl.df relative to tbl1_raw.xlsx
+    assert len(row_maj_tbl1_survey.tbl.df) == 5
+    assert list(row_maj_tbl1_survey.tbl.df.iloc[0]) == ['Daily', '14.13%', 76]
+    assert list(row_maj_tbl1_survey.tbl.df.iloc[-1]) == ['Rarely', '0.37%', 2]
+
+def test_survey_ReadHeader(row_maj_tbl1_survey):
+    """
+    Read header based on iheader_rowoffset_from_flag.
+    JDL 9/24/24
+    """
+    row_maj_tbl1_survey.FindFlagStartBound()
+    row_maj_tbl1_survey.FindFlagEndBound()
+    row_maj_tbl1_survey.ReadHeader()
+
+    # Assert that the header row index was set correctly
+    assert row_maj_tbl1_survey.dParseParams['idx_header_row'] == 3
+
+    # Assert that the column names were read correctly
+    lst_expected = ['Answer Choices', 'Response Percent', 'Responses']
+    assert row_maj_tbl1_survey.lst_df_raw_cols == lst_expected
+
+def test_survey_FindFlagEndBound(row_maj_tbl1_survey):
+    """
+    Find index of flag_end_bound row
+    JDL 9/24/24
+    """
+    #Locate the start bound idx    
+    row_maj_tbl1_survey.FindFlagStartBound()
+
+    # Call the method and check result for tbl1_raw.xlsx
+    row_maj_tbl1_survey.FindFlagEndBound()
+    assert row_maj_tbl1_survey.dParseParams['idx_end_bound'] == 9
+
+def test_survey_FindFlagStartBound(row_maj_tbl1_survey):
+    """
+    Find index of flag_start_bound row
+    JDL 9/24/24
+    """
+    #Check the result for tbl1_raw.xlsx
+    row_maj_tbl1_survey.FindFlagStartBound()
+    assert row_maj_tbl1_survey.dParseParams['idx_start_bound'] == 3
+
+"""
+================================================================================
+RowMajorTbl Class - for parsing row major raw data
+================================================================================
+"""
 @pytest.fixture
 def tbls(files):
     """
@@ -36,12 +172,6 @@ def tbls(files):
     tbls = ProjectTables(files, ['tbl1_raw.xlsx'])
     tbls.ImportRawInputs()
     return tbls
-
-"""
-================================================================================
-RowMajorTbl Class - for parsing row major raw data
-================================================================================
-"""
 
 @pytest.fixture
 def dParseParams_tbl1():
@@ -62,7 +192,7 @@ def row_maj_tbl1(tbls, dParseParams_tbl1):
     """
     Return the first table to be tested
     """
-    return RowMajorTbl(dParseParams_tbl1, tbls.tbl1)
+    return RowMajorTbl(dParseParams_tbl1, tbls.Table1)
 
 def test_SetDefaultIndex(row_maj_tbl1):
     """
@@ -185,5 +315,14 @@ def test_tbls_fixture(tbls):
     """
     Test that the tbl1_raw.xlsx was imported correctly
     """
-    assert tbls.tbl1.df.shape == (13, 5)
+    assert tbls.Table1.df.shape == (13, 5)
 
+def test_files_fixture(files):
+    """
+    Test that the files object was created correctly
+    JDL 9/24/24
+    """
+    assert files.path_data.split(os.sep)[-3:] == ['tests', 'test_data', '']
+    assert files.path_scripts.split(os.sep)[-2:] == ['libs', '']
+    assert files.path_root.split(os.sep)[-2:] == ['tests', '']
+    assert files.path_tests.split(os.sep)[-2:] == ['tests', '']
