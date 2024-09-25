@@ -49,8 +49,8 @@ class ProjectTables():
         self.lstOutputs = []
 
         #Initialize Output DataFrames
-        for tbl in self.lstOutputs:
-            tbl.df = pd.DataFrame()
+        #for tbl in self.lstOutputs:
+        #    tbl.df = pd.DataFrame()
 
         #Set hard-coded lists of df characteristics
         self.SetColLists()
@@ -87,8 +87,8 @@ class ProjectTables():
     def ImportRawInputs(self):
         """
         Read each table's raw data using openpyxl to work on sheets whose data 
-        may not start at A1
-        JDL 3/4/24
+        may not start at A1 (e.g. .df_raw requires parsing to .df)
+        JDL 3/4/24; Modified 9/25/24
         """
         for tbl in self.lstRawImports:
 
@@ -98,7 +98,7 @@ class ProjectTables():
 
             # Convert the data to a list and convert to a DataFrame
             data = ws.values
-            tbl.df = pd.DataFrame(data)
+            tbl.df_raw = pd.DataFrame(data)
 
 class Table():
     """
@@ -119,8 +119,9 @@ class Table():
         self.name = name #Table name
         self.idx_col_name = idx_col_name
 
-        #DataFrame and transposed DataFrame
-        self.df = None
+        #Raw (non-parsed) and parsed DataFrames
+        self.df_raw = pd.DataFrame()
+        self.df = pd.DataFrame()
 
         self.required_cols = []
         self.numeric_cols = []
@@ -184,43 +185,98 @@ class RowMajorTbl():
         #Parsing params (inputs and found during parsing)
         self.dParseParams = dParseParams
 
+        #List of df indices where flag_start_bound is found
+        self.start_bound_indices = []
+
         #Raw DataFrame and column list parsed from raw data
-        self.df_raw = tbl.df
+        self.df_raw = tbl.df_raw
         self.lst_df_raw_cols = []
 
         #Table whose df is to be populated by parsing
         self.tbl = tbl
 
-    def ParseTblProcedure(self):
+        #Current block start row index (in loop procedure)
+        self.idx_start_current = None
+
+        #Temporary storage of block's parsed data
+        self.df_block = pd.DataFrame()
+
+    def ReadBlocksProcedure(self):
+        """
+        Procedure to find flag_start_bound's and iteratively parse blocks
+        JDL 9/25/24
+        """
+        #Create list of row indices with start bound flag
+        self.SetStartBoundIndices()
+
+        #Iteratively read blocks 
+        for i in self.start_bound_indices:
+            self.idx_start_current = i
+            self.ParseBlockProcedure()
+
+        #set default index
+        self.SetDefaultIndex()
+
+        #Optionally stack parsed data (if .dParams['is_stack_parsed_cols']
+        self.StackParsedCols()
+
+    def SetStartBoundIndices(self):
+        """
+        Populate list of row indices whereflag_start_bound is found
+        JDL 9/25/24
+        """
+        flag= self.dParseParams['flag_start_bound']
+        icol = self.dParseParams['icol_start_bound']
+
+        fil = self.df_raw.iloc[:, icol] == flag
+        self.start_bound_indices = self.df_raw[fil].index.tolist()
+
+    def SetDefaultIndex(self):
+        """
+        Set the table's default index
+        JDL 3/4/24
+        """
+        print('\ndefault index', self.tbl.idx_col_name)
+        self.tbl.df = self.tbl.df.set_index(self.tbl.idx_col_name)
+    
+    def StackParsedCols(self):
+        """
+        Optionally stack parsed columns from row major blocks
+        JDL 9/25/24
+        """
+        is_stack = self.dParseParams.get('is_stack_parsed_cols', False)
+
+        if is_stack:
+            self.tbl.df = self.tbl.df.stack().reset_index()
+
+            #Respecify the index column name and set default index
+            self.tbl.df.columns = [self.tbl.idx_col_name, 'Metric', 'Value']
+            self.SetDefaultIndex()
+
+    def ParseBlockProcedure(self):
         """
         Parse the table and set self.df resulting DataFrame
+        JDL 9/25/24
         """
-        self.FindFlagStartBound()
         self.FindFlagEndBound()
         self.ReadHeader()
         self.SubsetDataRows()
         self.SubsetCols()
         self.RenameCols()
 
-    def FindFlagStartBound(self):
-        """
-        Find index of flag_start_bound
-        JDL 3/4/24
-        """
-        flag, icol = self.dParseParams['flag_start_bound'], self.dParseParams['icol_start_bound']
-        
-        # Find the first row index where the flag_start_bound is found
-        self.dParseParams['idx_start_bound'] = self.df_raw.iloc[:, icol].eq(flag).idxmax()
-        
+        #Concatenate into tbl.df and re-initialize df_block
+        self.tbl.df = pd.concat([self.tbl.df, self.df_block], axis=0)
+        self.df_block = pd.DataFrame()
+
     def FindFlagEndBound(self):
         """
         Find index of flag_end_bound
-        JDL 3/4/24
+        JDL 3/4/24; modified 9/25/24
         """
         flag, icol = self.dParseParams['flag_end_bound'], self.dParseParams['icol_end_bound']
 
-        #Start the search at the first data row based on idata_rowoffset_from_flag
-        idx_start = self.dParseParams['idx_start_bound'] + \
+        #Start the search at the first data row based on data offset from flag
+        idx_start = self.idx_start_current + \
             self.dParseParams['idata_rowoffset_from_flag']
 
         # if flag string indicates search for first null
@@ -233,12 +289,12 @@ class RowMajorTbl():
     def ReadHeader(self):
         """
         Read header based on iheader_rowoffset_from_flag.
-        JDL 3/4/24
+        JDL 3/4/24; modified 9/25/24
         """
         # Calculate the header row index
-        idx_start = self.dParseParams['idx_start_bound']
+        #idx_start = self.dParseParams['idx_start_bound']
         iheader_offset = self.dParseParams['iheader_rowoffset_from_flag']
-        idx_header_row =  idx_start + iheader_offset
+        idx_header_row =  self.idx_start_current + iheader_offset
 
         # Set the column names
         self.lst_df_raw_cols = list(self.df_raw.iloc[idx_header_row])
@@ -250,13 +306,13 @@ class RowMajorTbl():
         JDL 3/4/24
         """
         # Calculate the start index for the data
-        idx_start_data = self.dParseParams['idx_start_bound'] + \
+        idx_start_data = self.idx_start_current + \
             self.dParseParams['idata_rowoffset_from_flag']
         idx_end_bound = self.dParseParams['idx_end_bound']
 
         # Subset the data rows and set columns
-        self.tbl.df = self.df_raw.iloc[idx_start_data:idx_end_bound]
-        self.tbl.df.columns = self.lst_df_raw_cols
+        self.df_block = self.df_raw.iloc[idx_start_data:idx_end_bound]
+        self.df_block.columns = self.lst_df_raw_cols
 
     def SubsetCols(self):
         """
@@ -266,19 +322,12 @@ class RowMajorTbl():
         #Use import_col_map if specified
         if len(self.tbl.import_col_map) > 0:
             cols_keep = list(self.tbl.import_col_map.keys())
-            self.tbl.df = self.tbl.df[cols_keep]
+            self.df_block = self.df_block[cols_keep]
 
     def RenameCols(self):
         """
-        Use tbl.import_col_map to rename columns.
+        Optionally use tbl.import_col_map to rename columns.
         JDL 3/4/24; Modified 9/24/24
         """
         if len(self.tbl.import_col_map) > 0:
-            self.tbl.df.rename(columns=self.tbl.import_col_map, inplace=True)
-
-    def SetDefaultIndex(self):
-        """
-        Set the table's default index
-        JDL 3/4/24
-        """
-        self.tbl.df = self.tbl.df.set_index(self.tbl.idx_col_name)
+            self.df_block.rename(columns=self.tbl.import_col_map, inplace=True)

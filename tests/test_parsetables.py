@@ -1,4 +1,4 @@
-#Version 9/24/24
+#Version 9/25/24
 #python -m pytest test_parsetables.py -v -s
 import sys, os
 import pandas as pd
@@ -43,6 +43,8 @@ def tbls_survey(files):
 
     #Override hard-coded demo for tbls.Table1
     tbls.Table1.import_col_map = {}
+    tbls.Table1.idx_col_name = 'Answer Choices'
+
     return tbls
 
 @pytest.fixture
@@ -59,13 +61,6 @@ def dParseParams_tbl1_survey():
     dParseParams['idata_rowoffset_from_flag'] = 1
     return dParseParams
 
-def test_survey_tbls_fixture(tbls_survey):    
-    """
-    Test that the tbl1_survey.xlsx was imported correctly
-    JDL 9/24/24
-    """
-    assert tbls_survey.Table1.df.shape == (20, 3)
-
 @pytest.fixture
 def row_maj_tbl1_survey(tbls_survey, dParseParams_tbl1_survey):
     """
@@ -74,30 +69,68 @@ def row_maj_tbl1_survey(tbls_survey, dParseParams_tbl1_survey):
     """
     return RowMajorTbl(dParseParams_tbl1_survey, tbls_survey.Table1)
 
-def test_survey_ParseTblProcedure(row_maj_tbl1_survey):
+"""
+================================================================================
+"""
+def test_survey_ReadBlocksProcedure1(row_maj_tbl1_survey):
+    """
+    Procedure to find flag_start_bound's and iteratively parse blocks
+    (parse a raw table containing two blocks)
+    JDL 9/25/24
+    """
+    row_maj_tbl1_survey.ReadBlocksProcedure()
+
+    #Check that procedure found two blocks
+    row_maj_tbl1_survey.start_bound_indices = [3, 14]
+
+    if True: print_tables(row_maj_tbl1_survey)
+
+def test_survey_ReadBlocksProcedure2(row_maj_tbl1_survey):
+    """
+    Procedure to find flag_start_bound's and iteratively parse blocks
+    (parse a raw table containing two blocks)
+    Stack the parsed data
+    JDL 9/25/24
+    """
+    row_maj_tbl1_survey.ReadBlocksProcedure()
+
+    #Check that procedure found two blocks
+    row_maj_tbl1_survey.start_bound_indices = [3, 14]
+
+    row_maj_tbl1_survey.dParseParams['is_stack_parsed_cols'] = True
+    row_maj_tbl1_survey.StackParsedCols()
+
+    if True: print_tables(row_maj_tbl1_survey)
+
+def test_survey_ParseBlockProcedure(row_maj_tbl1_survey):
     """
     Parse the survey table and check the final state of the table.
-    JDL 9/24/24
+    JDL 9/25/24
     """
-    row_maj_tbl1_survey.ParseTblProcedure()
+    SetListFirstStartBoundIndex(row_maj_tbl1_survey)
+    row_maj_tbl1_survey.ParseBlockProcedure()
 
     #Check resulting .tbl.df relative to tbl1_survey.xlsx
-    #assert len(row_maj_tbl1_survey.tbl.df) == 19
-    #assert list(row_maj_tbl1_survey.tbl.df.iloc[0]) == ['Answer Choices', '1', 'Strongly Disagree']
-    #assert list(row_maj_tbl1_survey.tbl.df.iloc[-1]) == ['Answer Choices', '5', 'Strongly Agree']
+    assert len(row_maj_tbl1_survey.tbl.df) == 5
+    assert list(row_maj_tbl1_survey.tbl.df.iloc[0]) == ['Daily', '14.13%', 76]
+    assert list(row_maj_tbl1_survey.tbl.df.iloc[-1]) == ['Rarely', '0.37%', 2]
 
-    #print('\n\nraw imported table\n')
-    #print(row_maj_tbl1_survey.df_raw)
-    print('\nparsed table\n')
-    print(row_maj_tbl1_survey.tbl.df)
-    print('\n\n')
+    if False: print_tables(row_maj_tbl1_survey)
 
-def test_SubsetCols(row_maj_tbl1_survey):
+def print_tables(row_maj_tbl1_survey):
+    """
+    Helper function to print raw and parsed tables
+    JDL 9/25/24
+    """
+    print('\n\nraw imported table\n', row_maj_tbl1_survey.df_raw)
+    print('\nparsed table\n', row_maj_tbl1_survey.tbl.df, '\n\n')
+
+def test_survey_SubsetCols(row_maj_tbl1_survey):
     """
     Use tbl.import_col_map to subset columns based on header.
     JDL 9/24/24
     """
-    row_maj_tbl1_survey.FindFlagStartBound()
+    SetListFirstStartBoundIndex(row_maj_tbl1_survey)
     row_maj_tbl1_survey.FindFlagEndBound()
     row_maj_tbl1_survey.ReadHeader()
     row_maj_tbl1_survey.SubsetDataRows()
@@ -105,29 +138,29 @@ def test_SubsetCols(row_maj_tbl1_survey):
 
     # Assert that column names are correct before renaming
     lst_expected = ['Answer Choices', 'Response Percent', 'Responses']
-    assert list(row_maj_tbl1_survey.tbl.df.columns) == lst_expected
+    assert list(row_maj_tbl1_survey.df_block.columns) == lst_expected
 
 def test_survey_SubsetDataRows(row_maj_tbl1_survey):
     """
     Subset rows based on flags and idata_rowoffset_from_flag.
     JDL 9/24/24
     """
-    row_maj_tbl1_survey.FindFlagStartBound()
+    SetListFirstStartBoundIndex(row_maj_tbl1_survey)
     row_maj_tbl1_survey.FindFlagEndBound()
     row_maj_tbl1_survey.ReadHeader()
     row_maj_tbl1_survey.SubsetDataRows()
 
     # Check resulting .tbl.df relative to tbl1_raw.xlsx
-    assert len(row_maj_tbl1_survey.tbl.df) == 5
-    assert list(row_maj_tbl1_survey.tbl.df.iloc[0]) == ['Daily', '14.13%', 76]
-    assert list(row_maj_tbl1_survey.tbl.df.iloc[-1]) == ['Rarely', '0.37%', 2]
+    assert len(row_maj_tbl1_survey.df_block) == 5
+    assert list(row_maj_tbl1_survey.df_block.iloc[0]) == ['Daily', '14.13%', 76]
+    assert list(row_maj_tbl1_survey.df_block.iloc[-1]) == ['Rarely', '0.37%', 2]
 
 def test_survey_ReadHeader(row_maj_tbl1_survey):
     """
     Read header based on iheader_rowoffset_from_flag.
     JDL 9/24/24
     """
-    row_maj_tbl1_survey.FindFlagStartBound()
+    SetListFirstStartBoundIndex(row_maj_tbl1_survey)
     row_maj_tbl1_survey.FindFlagEndBound()
     row_maj_tbl1_survey.ReadHeader()
 
@@ -141,23 +174,43 @@ def test_survey_ReadHeader(row_maj_tbl1_survey):
 def test_survey_FindFlagEndBound(row_maj_tbl1_survey):
     """
     Find index of flag_end_bound row
-    JDL 9/24/24
+    JDL 9/25/24
     """
-    #Locate the start bound idx    
-    row_maj_tbl1_survey.FindFlagStartBound()
+    #Locate the start bound indices and truncate to just first
+    SetListFirstStartBoundIndex(row_maj_tbl1_survey)
+    assert row_maj_tbl1_survey.idx_start_current == 3
 
-    # Call the method and check result for tbl1_raw.xlsx
     row_maj_tbl1_survey.FindFlagEndBound()
     assert row_maj_tbl1_survey.dParseParams['idx_end_bound'] == 9
 
-def test_survey_FindFlagStartBound(row_maj_tbl1_survey):
+def SetListFirstStartBoundIndex(row_maj_tbl1_survey):
     """
-    Find index of flag_start_bound row
+    Helper test function - set .idx_start_current to first list item
+    JDL 9/25/24
+    """
+    row_maj_tbl1_survey.SetStartBoundIndices()
+    row_maj_tbl1_survey.idx_start_current = \
+        row_maj_tbl1_survey.start_bound_indices[0]
+
+def test_survey_SetStartBoundIndices(row_maj_tbl1_survey):
+    """
+    Populate .start_bound_indices list of row indices where
+    flag_start_bound is found
+    JDL 9/25/24
+    """
+    row_maj_tbl1_survey.SetStartBoundIndices()
+
+    # Expected indices where 'Answer Choices' is found
+    expected_indices = [3, 14]
+
+    assert row_maj_tbl1_survey.start_bound_indices == expected_indices
+
+def test_survey_tbls_fixture(tbls_survey):    
+    """
+    Test that the tbl1_survey.xlsx was imported correctly
     JDL 9/24/24
     """
-    #Check the result for tbl1_raw.xlsx
-    row_maj_tbl1_survey.FindFlagStartBound()
-    assert row_maj_tbl1_survey.dParseParams['idx_start_bound'] == 3
+    assert tbls_survey.Table1.df_raw.shape == (20, 3)
 
 """
 ================================================================================
