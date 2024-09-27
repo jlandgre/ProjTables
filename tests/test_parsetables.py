@@ -73,9 +73,9 @@ def row_maj_tbl1_survey(tbl1_survey):
 """
 def test_survey_ReadBlocksProcedure1(row_maj_tbl1_survey):
     """
-    Procedure to find flag_start_bound's and iteratively parse blocks
+    Procedure to iteratively parse row major blocks
     (parse a raw table containing two blocks)
-    JDL 9/25/24
+    JDL 9/26/24
     """
     row_maj_tbl1_survey.ReadBlocksProcedure()
 
@@ -90,11 +90,11 @@ def test_survey_ReadBlocksProcedure1(row_maj_tbl1_survey):
     lst_expected =  ['Improved cleaning', np.nan, np.nan, '18', '11', '17']
     check_series_values(df_check.iloc[-1], lst_expected)
 
-    if True: print_tables(row_maj_tbl1_survey)
+    if False: print_tables(row_maj_tbl1_survey)
 
 def test_survey_ReadBlocksProcedure2(row_maj_tbl1_survey):
     """
-    Procedure to find flag_start_bound's and iteratively parse blocks
+    Procedure to iteratively parse row major blocks
     (parse a raw table containing two blocks)
     Stack the parsed data
     JDL 9/25/24
@@ -116,7 +116,7 @@ def test_survey_ReadBlocksProcedure2(row_maj_tbl1_survey):
     lst_expected =  ['Improved cleaning', '2', '11']
     check_series_values(df_check.iloc[-2], lst_expected)
 
-    if True: print_tables(row_maj_tbl1_survey)
+    if False: print_tables(row_maj_tbl1_survey)
 
 def test_survey_ParseBlockProcedure1(row_maj_tbl1_survey):
     """
@@ -157,14 +157,6 @@ def test_survey_ParseBlockProcedure2(row_maj_tbl1_survey):
     assert list(row_maj_tbl1_survey.tbl.df.iloc[-1]) == ['Improved cleaning', '18', '11', '17']
 
     if False: print_tables(row_maj_tbl1_survey)
-
-def print_tables(row_maj_tbl1_survey):
-    """
-    Helper function to print raw and parsed tables
-    JDL 9/25/24
-    """
-    print('\n\nraw imported table\n', row_maj_tbl1_survey.df_raw)
-    print('\nparsed table\n', row_maj_tbl1_survey.tbl.df, '\n\n')
 
 def test_survey_SubsetCols(row_maj_tbl1_survey):
     """
@@ -215,17 +207,6 @@ def test_survey_ReadHeader(row_maj_tbl1_survey):
     lst_expected = ['Answer Choices', 'Response Percent', 'Responses', None, None, None]
     check_series_values(row_maj_tbl1_survey.cols_df_block, lst_expected)
 
-def check_series_values(ser, lst_expected):
-    """
-    Helper function to check series values allowing for NaN comparisons
-    JDL 9/25/24
-    """
-    for actual, expect in zip(ser, lst_expected):
-        if isinstance(expect, float) and np.isnan(expect):
-            assert np.isnan(actual)
-        else:
-            assert actual == expect
-
 def test_survey_FindFlagEndBound(row_maj_tbl1_survey):
     """
     Find index of flag_end_bound row
@@ -236,7 +217,7 @@ def test_survey_FindFlagEndBound(row_maj_tbl1_survey):
     assert row_maj_tbl1_survey.idx_start_current == 3
 
     row_maj_tbl1_survey.FindFlagEndBound()
-    assert row_maj_tbl1_survey.tbl.dParseParams['idx_end_bound'] == 9
+    assert row_maj_tbl1_survey.idx_end_bound == 9
 
 def SetListFirstStartBoundIndex(row_maj_tbl1_survey):
     """
@@ -287,17 +268,9 @@ def test_survey_tbl1_fixture(tbl1_survey):
 """
 ================================================================================
 RowMajorTbl Class - for parsing row major raw data
+Example with one block
 ================================================================================
 """
-@pytest.fixture
-def tbls(files):
-    """
-    Using .ImportRawInputs() method to import sheet whose data may not start at A1
-    """
-    tbls = ProjectTables(files, ['tbl1_raw.xlsx'])
-    tbls.ImportRawInputs()
-    return tbls
-
 @pytest.fixture
 def dParseParams_tbl1():
     """
@@ -313,42 +286,70 @@ def dParseParams_tbl1():
     return dParseParams
 
 @pytest.fixture
-def row_maj_tbl1(tbls, dParseParams_tbl1):
+def tbl1(files, dParseParams_tbl1):
     """
-    Return the first table to be tested
+    Table object for survey data
+    JDL 9/25/24
     """
-    return RowMajorTbl(dParseParams_tbl1, tbls.Table1)
+    pf = files.path_data + 'tbl1_raw.xlsx'
+    tbl = Table(pf, 'Table1', 'raw_table', 'idx', \
+                dParseParams_tbl1, import_dtype=None)
+    tbl.import_col_map = {'idx_raw':'idx', 'col #1':'col_1', 'col #2':'col_2'}
+    tbl.ImportExcelRaw()
+    return tbl
+
+@pytest.fixture
+def row_maj_tbl1(tbl1):
+    """
+    Instance RowMajorTbl parsing class for Table1 data
+    JDL 9/26/24
+    """
+    return RowMajorTbl(tbl1)
+"""
+================================================================================
+"""
+def test_ReadBlocksProcedure(row_maj_tbl1):
+    """
+    Procedure to iteratively parse row major blocks
+    (parse a raw table containing one block)
+    JDL 9/26/24
+    """
+    row_maj_tbl1.ReadBlocksProcedure()
+
+    #Check the final state of the table
+    check_tbl1_values(row_maj_tbl1)
+
+    if False: print_tables(row_maj_tbl1)
 
 def test_SetDefaultIndex(row_maj_tbl1):
     """
     Set default index and check the final state of the table.
     JDL 3/4/24
     """
-    row_maj_tbl1.FindFlagStartBound()
-    row_maj_tbl1.FindFlagEndBound()
-    row_maj_tbl1.ReadHeader()
-    row_maj_tbl1.SubsetDataRows()
-    row_maj_tbl1.SubsetCols()
-    row_maj_tbl1.RenameCols()
+    # Precursor methods (ReadBlocksProcedure)
+    row_maj_tbl1.AddTrailingBlankRow()
+    row_maj_tbl1.SetStartBoundIndices()
+    for i in row_maj_tbl1.start_bound_indices:
+        row_maj_tbl1.idx_start_current = i
+        row_maj_tbl1.ParseBlockProcedure()
+
     row_maj_tbl1.SetDefaultIndex()
-    ParseTblProcedureChecks(row_maj_tbl1)
 
-    print('\n\nraw imported table\n')
-    print(row_maj_tbl1.df_raw)
-    print('\nparsed table\n')
-    print(row_maj_tbl1.tbl.df)
-    print('\n\n')
+    #Check the final state of the table
+    check_tbl1_values(row_maj_tbl1)
 
-def ParseTblProcedureChecks(row_maj_tbl1):
+    if False: print_tables(row_maj_tbl1)
+
+def check_tbl1_values(row_maj_tbl1):
     """
-    Helper function to check final state of parsed tbl.df
+    Check the final state of the table.
     JDL 3/4/24
     """
     #Check index name and column names 
     assert row_maj_tbl1.tbl.df.index.name == 'idx'
     assert list(row_maj_tbl1.tbl.df.columns) == ['col_1', 'col_2']
 
-    #Check df dimensions and values
+    #Check resulting .tbl.df relative to tbl1_raw.xlsx
     assert len(row_maj_tbl1.tbl.df) == 5
     assert list(row_maj_tbl1.tbl.df.loc[1]) == [10, 'a']
     assert list(row_maj_tbl1.tbl.df.loc[5]) == [50, 'e']
@@ -356,9 +357,13 @@ def ParseTblProcedureChecks(row_maj_tbl1):
 def test_RenameCols(row_maj_tbl1):
     """
     Use tbl.import_col_map to rename columns.
-    JDL 3/4/24
+    JDL 3/4/24; Modified 9/26/24
     """
-    row_maj_tbl1.FindFlagStartBound()
+    #Locate the start bound idx    
+    row_maj_tbl1.SetStartBoundIndices()
+    row_maj_tbl1.idx_start_current = row_maj_tbl1.start_bound_indices[0]
+
+    # Block specific methods
     row_maj_tbl1.FindFlagEndBound()
     row_maj_tbl1.ReadHeader()
     row_maj_tbl1.SubsetDataRows()
@@ -367,14 +372,18 @@ def test_RenameCols(row_maj_tbl1):
 
     # Assert that column names are correct after renaming
     lst_expected = ['idx', 'col_1', 'col_2']
-    assert list(row_maj_tbl1.tbl.df.columns) == lst_expected
+    assert list(row_maj_tbl1.df_block.columns) == lst_expected
 
 def test_SubsetCols(row_maj_tbl1):
     """
-    Use tbl.import_col_map to subset columns based on header.
-    JDL 3/4/24
+    Use tbl.import_col_map to subset columns based on header
+    JDL 3/4/24; Modified 9/26/24
     """
-    row_maj_tbl1.FindFlagStartBound()
+    #Locate the start bound idx    
+    row_maj_tbl1.SetStartBoundIndices()
+    row_maj_tbl1.idx_start_current = row_maj_tbl1.start_bound_indices[0]
+
+    # Block specific methods
     row_maj_tbl1.FindFlagEndBound()
     row_maj_tbl1.ReadHeader()
     row_maj_tbl1.SubsetDataRows()
@@ -382,65 +391,92 @@ def test_SubsetCols(row_maj_tbl1):
 
     # Assert that column names are correct before renaming
     lst_expected =['idx_raw', 'col #1', 'col #2']
-    assert list(row_maj_tbl1.tbl.df.columns) == lst_expected
+    assert list(row_maj_tbl1.df_block.columns) == lst_expected
 
 def test_SubsetDataRows(row_maj_tbl1):
     """
     Subset rows based on flags and idata_rowoffset_from_flag.
-    JDL 3/4/24
+    JDL 3/4/24; Modified 9/26/24
     """
-    row_maj_tbl1.FindFlagStartBound()
+    #Locate the start bound idx    
+    row_maj_tbl1.SetStartBoundIndices()
+    row_maj_tbl1.idx_start_current = row_maj_tbl1.start_bound_indices[0]
+
+    # Block specific methods
     row_maj_tbl1.FindFlagEndBound()
     row_maj_tbl1.ReadHeader()
     row_maj_tbl1.SubsetDataRows()
 
     # Check resulting .tbl.df relative to tbl1_raw.xlsx
-    assert len(row_maj_tbl1.tbl.df) == 5
-    assert list(row_maj_tbl1.tbl.df.iloc[0]) == [None, None, 1, 10, 'a']
-    assert list(row_maj_tbl1.tbl.df.iloc[-1]) == [None, None, 5, 50, 'e']
+    assert len(row_maj_tbl1.df_block) == 5
+    lst_expected = [None, None, 1, 10, 'a']
+    check_series_values(row_maj_tbl1.df_block.iloc[0], lst_expected)
+
+    lst_expected = [None, None, 5, 50, 'e']
+    check_series_values(row_maj_tbl1.df_block.iloc[-1], lst_expected)
 
 def test_ReadHeader(row_maj_tbl1):
     """
     Read header based on iheader_rowoffset_from_flag.
-    JDL 3/4/24
+    JDL 3/4/24; Modified 9/26/24
     """
-    row_maj_tbl1.FindFlagStartBound()
+    #Locate the start bound idx    
+    row_maj_tbl1.SetStartBoundIndices()
+    row_maj_tbl1.idx_start_current = row_maj_tbl1.start_bound_indices[0]
+
+    # Block specific methods
     row_maj_tbl1.FindFlagEndBound()
     row_maj_tbl1.ReadHeader()
 
-    # Assert that the header row index was set correctly
-    assert row_maj_tbl1.dParseParams['idx_header_row'] == 5
+    # Check header row index was set correctly
+    assert row_maj_tbl1.idx_header_row == 5
 
-    # Assert that the column names were read correctly
+    # Check block's column names
     lst_expected = [None, None, 'idx_raw', 'col #1', 'col #2']
-    assert row_maj_tbl1.lst_df_raw_cols == lst_expected
+    check_series_values(row_maj_tbl1.cols_df_block, lst_expected)
 
 def test_FindFlagEndBound(row_maj_tbl1):
     """
     Find index of flag_end_bound row
-    JDL 3/4/24
+    JDL 3/4/24; Modified 9/26/24
     """
     #Locate the start bound idx    
-    row_maj_tbl1.FindFlagStartBound()
+    row_maj_tbl1.SetStartBoundIndices()
+    row_maj_tbl1.idx_start_current = row_maj_tbl1.start_bound_indices[0]
 
     # Call the method and check result for tbl1_raw.xlsx
     row_maj_tbl1.FindFlagEndBound()
-    assert row_maj_tbl1.dParseParams['idx_end_bound'] == 11
+    assert row_maj_tbl1.idx_end_bound == 11
 
-def test_FindFlagStartBound(row_maj_tbl1):
+def test_SetStartBoundIndices(row_maj_tbl1):
     """
-    Find index of flag_start_bound row
-    JDL 3/4/24
+    Populate .start_bound_indices list of row indices where
+    flag_start_bound is found
+    JDL 9/26/24
     """
-    #Check the result for tbl1_raw.xlsx
-    row_maj_tbl1.FindFlagStartBound()
-    assert row_maj_tbl1.dParseParams['idx_start_bound'] == 4
+    row_maj_tbl1.SetStartBoundIndices()
 
-def test_tbls_fixture(tbls):    
+    # Expected indices where 'Answer Choices' is found
+    expected_indices = [4]
+
+    assert row_maj_tbl1.start_bound_indices == expected_indices
+
+def test_AddTrailingBlankRow(row_maj_tbl1):
     """
-    Test that the tbl1_raw.xlsx was imported correctly
+    Add a trailing blank row to self.df_raw (to ensure last <blank> flag to
+    terminate last block)
+    JDL 9/26/24
     """
-    assert tbls.Table1.df.shape == (13, 5)
+    assert row_maj_tbl1.df_raw.shape == (13, 5)
+    row_maj_tbl1.AddTrailingBlankRow()
+    assert row_maj_tbl1.df_raw.shape == (14, 5)
+
+def test_tbl1_fixture(tbl1):
+    """
+    Test that Table1 data imported correctly
+    JDL 9/26/24
+    """
+    assert tbl1.df_raw.shape == (13, 5)
 
 def test_files_fixture(files):
     """
@@ -451,3 +487,28 @@ def test_files_fixture(files):
     assert files.path_scripts.split(os.sep)[-2:] == ['libs', '']
     assert files.path_root.split(os.sep)[-2:] == ['tests', '']
     assert files.path_tests.split(os.sep)[-2:] == ['tests', '']
+
+"""
+================================================================================
+Helper methods for testing
+================================================================================
+"""
+def print_tables(row_maj_tbl1_survey):
+    """
+    Helper function to print raw and parsed tables
+    JDL 9/25/24
+    """
+    print('\n\nraw imported table\n', row_maj_tbl1_survey.df_raw)
+    print('\nparsed table\n', row_maj_tbl1_survey.tbl.df, '\n\n')
+
+def check_series_values(ser, lst_expected):
+    """
+    Helper function to check series values allowing for NaN comparisons
+    JDL 9/25/24
+    """
+    for actual, expect in zip(ser, lst_expected):
+        if isinstance(expect, float) and np.isnan(expect):
+            assert np.isnan(actual)
+        else:
+            assert actual == expect
+

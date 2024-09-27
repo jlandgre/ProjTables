@@ -29,7 +29,7 @@ class ProjectTables():
     * Table3 is for validation only. It is same as Table2 but with formatted blank
       cells that cause .UsedRange to include blank columns.
 
-    JDL 9/3/24
+    JDL 9/26/24
     """
     def __init__(self, files, lst_files, IsPrint=False):
 
@@ -194,37 +194,37 @@ class RowMajorTbl():
     """
     Description and Parsing Row Major Table initially embedded in tbl.df
     (imported with tbls.ImportInputs() or .ImportRawInputs() methods
-    JDL 3/4/24
+    JDL 3/4/24; Modified 9/26/24
     """
     def __init__(self, tbl):
 
-        #Parsing params (inputs and found during parsing)
-        #self.dParseParams = tbl.dParseParams
-
-        #List of df indices where flag_start_bound is found
+        #List of df indices for rows where flag_start_bound is found
         self.start_bound_indices = []
 
         #Raw DataFrame and column list parsed from raw data
         self.df_raw = tbl.df_raw
-        self.lst_df_raw_cols = []
 
         #Table whose df is to be populated by parsing
         self.tbl = tbl
 
-        #Current block start row index (in loop procedure)
+        #Start, header, end, first data row indices for current block in loop
         self.idx_start_current = None
         self.idx_header_row = None
+        self.idx_end_bound = None
+        self.idx_start_data = None
 
-        #Temporary storage of block's parsed data
+        #Current block's columns and parsed data
+        self.cols_df_block = []
         self.df_block = pd.DataFrame()
-
+    """
+    ================================================================================
+    """
     def ReadBlocksProcedure(self):
         """
-        Procedure to find flag_start_bound's and iteratively parse blocks
-        JDL 9/25/24
+        Procedure to iteratively parse row major blocks
+        JDL 9/26/24
         """
-
-        # Append a blank row at the end of self.df_raw (to ensure find last <blank> flag)
+        # Append blank row at end of .df_raw (to ensure find last <blank> flag)
         self.AddTrailingBlankRow()
 
         #Create list of row indices with start bound flag
@@ -300,51 +300,44 @@ class RowMajorTbl():
     def FindFlagEndBound(self):
         """
         Find index of flag_end_bound
-        JDL 3/4/24; modified 9/25/24
+        JDL 3/4/24; modified 9/26/24
         """
-        flag, icol = self.tbl.dParseParams['flag_end_bound'], self.tbl.dParseParams['icol_end_bound']
+        flag = self.tbl.dParseParams['flag_end_bound']
+        icol = self.tbl.dParseParams['icol_end_bound']
+        ioffset = self.tbl.dParseParams['idata_rowoffset_from_flag']
 
         #Start the search at the first data row based on data offset from flag
-        idx_start = self.idx_start_current + \
-            self.tbl.dParseParams['idata_rowoffset_from_flag']
+        i = self.idx_start_current + ioffset
 
-        # if flag string indicates search for first null
+        # search for specifie flag string/<blank> below row i
         if flag == '<blank>':
-            idx_end_bound = self.df_raw.iloc[idx_start:, icol].isnull().idxmax()
+            self.idx_end_bound = self.df_raw.iloc[i:, icol].isnull().idxmax()
         else:
-            idx_end_bound = self.df_raw.iloc[idx_start:, icol].eq(flag).idxmax()
-
-        self.tbl.dParseParams['idx_end_bound'] = idx_end_bound
+            self.idx_end_bound = self.df_raw.iloc[i:, icol].eq(flag).idxmax()
 
     def ReadHeader(self):
         """
         Read header based on iheader_rowoffset_from_flag.
-        JDL 3/4/24; modified 9/25/24
+        JDL 3/4/24; modified 9/26/24
         """
         # Calculate the header row index
-        #idx_start = self.tbl.dParseParams['idx_start_bound']
         iheader_offset = self.tbl.dParseParams['iheader_rowoffset_from_flag']
         self.idx_header_row =  self.idx_start_current + iheader_offset
 
         # Set the column names (drop columns with blank header)
-        self.cols_df_block = \
-            self.df_raw.iloc[self.idx_header_row].values
-                
-        #self.lst_df_raw_cols = list(self.df_raw.iloc[idx_header_row])
-        #self.tbl.dParseParams['idx_header_row'] = idx_header_row
+        self.cols_df_block = self.df_raw.iloc[self.idx_header_row].values
 
     def SubsetDataRows(self):
         """
         Subset rows based on flags and idata_rowoffset_from_flag.
-        JDL 3/4/24; Modified 9/25/24
+        JDL 3/4/24; Modified 9/26/24
         """
         # Calculate the start index for the data
-        idx_start_data = self.idx_start_current + \
+        self.idx_start_data = self.idx_start_current + \
             self.tbl.dParseParams['idata_rowoffset_from_flag']
-        idx_end_bound = self.tbl.dParseParams['idx_end_bound']
 
-        # Subset the data rows and set columns
-        self.df_block = self.df_raw.iloc[idx_start_data:idx_end_bound]
+        # Create df with block's data rows
+        self.df_block = self.df_raw.iloc[self.idx_start_data:self.idx_end_bound]
 
     def SubsetCols(self):
         """
