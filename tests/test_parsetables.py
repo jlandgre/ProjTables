@@ -16,6 +16,7 @@ from projfiles import Files
 from projtables import ProjectTables
 from projtables import Table
 from projtables import RowMajorTbl
+from projtables import RowMajorBlockID
 
 """
 ================================================================================
@@ -283,6 +284,10 @@ def dParseParams_tbl1():
     dParseParams['icol_end_bound'] = 2
     dParseParams['iheader_rowoffset_from_flag'] = 1
     dParseParams['idata_rowoffset_from_flag'] = 2
+
+    #Specify one item tuple to extract a block ID value from above the block
+    dParseParams['block_id_vars'] = ('stuff', -4, 2)
+
     return dParseParams
 
 @pytest.fixture
@@ -305,6 +310,7 @@ def row_maj_tbl1(tbl1):
     JDL 9/26/24
     """
     return RowMajorTbl(tbl1)
+
 """
 ================================================================================
 """
@@ -321,6 +327,7 @@ def test_ReadBlocksProcedure(row_maj_tbl1):
 
     if False: print_tables(row_maj_tbl1)
 
+
 def test_SetDefaultIndex(row_maj_tbl1):
     """
     Set default index and check the final state of the table.
@@ -335,6 +342,10 @@ def test_SetDefaultIndex(row_maj_tbl1):
 
     row_maj_tbl1.SetDefaultIndex()
 
+    #Extract block_id value specified in dParseParams
+    row_maj_tbl1.tbl.df, row_maj_tbl1.lst_block_ids = \
+        RowMajorBlockID(row_maj_tbl1.tbl, row_maj_tbl1.idx_start_data).ExtractBlockIDs
+    
     #Check the final state of the table
     check_tbl1_values(row_maj_tbl1)
 
@@ -347,12 +358,12 @@ def check_tbl1_values(row_maj_tbl1):
     """
     #Check index name and column names 
     assert row_maj_tbl1.tbl.df.index.name == 'idx'
-    assert list(row_maj_tbl1.tbl.df.columns) == ['col_1', 'col_2']
+    assert list(row_maj_tbl1.tbl.df.columns) == ['stuff', 'col_1', 'col_2']
 
     #Check resulting .tbl.df relative to tbl1_raw.xlsx
     assert len(row_maj_tbl1.tbl.df) == 5
-    assert list(row_maj_tbl1.tbl.df.loc[1]) == [10, 'a']
-    assert list(row_maj_tbl1.tbl.df.loc[5]) == [50, 'e']
+    assert list(row_maj_tbl1.tbl.df.loc[1]) == ['Stuff in C', 10, 'a']
+    assert list(row_maj_tbl1.tbl.df.loc[5]) == ['Stuff in C', 50, 'e']
 
 def test_RenameCols(row_maj_tbl1):
     """
@@ -511,4 +522,114 @@ def check_series_values(ser, lst_expected):
             assert np.isnan(actual)
         else:
             assert actual == expect
+
+"""
+================================================================================
+RowMajorBlockID Class - sub to RowMajorTbl for extracting block_id values
+JDL 9/27/24
+================================================================================
+"""
+def test_blockids_ExtractBlockIDsProcedure1(row_maj_tbl1):
+    """
+    Procedure to extract block ID values from df_raw
+    (One Block_ID variable input as tuple)
+    JDL 9/27/24
+    """
+    #Parse the block's row major data to populate .tbl.df
+    create_tbl_df(row_maj_tbl1)
+
+    #Call property to extract block IDs
+    tbl = row_maj_tbl1.tbl
+    idx_start_data = row_maj_tbl1.idx_start_data
+    df, lst = RowMajorBlockID(tbl, idx_start_data).ExtractBlockIDs
+    assert lst == ['stuff']
+    assert len(df) == 5
+    assert list(df.columns) == ['stuff', 'idx', 'col_1', 'col_2']
+
+def test_blockids_ExtractBlockIDsProcedure2(row_maj_tbl1):
+    """
+    Procedure to extract block ID values from df_raw
+    (Two Block_ID variables input as list)
+    JDL 9/27/24
+    """
+    #Parse the block's row major data to populate .tbl.df
+    create_tbl_df(row_maj_tbl1)
+
+    #Override default parsing instruction
+    lst = [('stuff', -4, 2), ('stuff2', -2, 1)]
+    row_maj_tbl1.tbl.dParseParams['block_id_vars'] = lst
+        
+    #Call property to extract block IDs
+    tbl = row_maj_tbl1.tbl
+    idx_start_data = row_maj_tbl1.idx_start_data
+    df, lst = RowMajorBlockID(tbl, idx_start_data).ExtractBlockIDs
+
+    assert lst == ['stuff', 'stuff2']
+    assert len(df) == 5
+    assert list(df.columns) == ['stuff', 'stuff2', 'idx', 'col_1', 'col_2']
+    assert all(df['stuff'] == 'Stuff in C') 
+    assert all(df['stuff2'] == 'flag') 
+
+def test_blockids_ReorderColumns(row_maj_tbl1):
+    """
+    If only one block_id, it can be specified as tuple; otherwise it's
+    a list of tuples.
+    JDL 9/27/24
+    """
+    #Parse the block's row major data to populate .tbl.df
+    create_tbl_df(row_maj_tbl1)
+
+    #Instance of RowMajorBlockID
+    row_maj_block_id = RowMajorBlockID(row_maj_tbl1.tbl, row_maj_tbl1.idx_start_data)
+
+    #Call methods
+    row_maj_block_id.ConvertTupleToList()
+    row_maj_block_id.SetBlockIDValue(row_maj_tbl1.tbl.dParseParams['block_id_vars'][0])
+    row_maj_block_id.ReorderColumns()
+    assert list(row_maj_block_id.tbl.df.columns) == ['stuff', 'idx', 'col_1', 'col_2']
+
+def test_blockids_SetBlockIDValue(row_maj_tbl1):
+    """
+    If only one block_id, it can be specified as tuple; otherwise it's
+    a list of tuples.
+    JDL 9/27/24
+    """
+    #Parse the block's row major data to populate .tbl.df
+    create_tbl_df(row_maj_tbl1)
+
+    #Instance of RowMajorBlockID
+    row_maj_block_id = RowMajorBlockID(row_maj_tbl1.tbl, row_maj_tbl1.idx_start_data)
+
+    #Call methods
+    row_maj_block_id.ConvertTupleToList()
+    row_maj_block_id.SetBlockIDValue(row_maj_tbl1.tbl.dParseParams['block_id_vars'][0])
+
+    assert row_maj_block_id.block_id_names == ['stuff']
+    assert list(row_maj_block_id.tbl.df.columns) == ['idx', 'col_1', 'col_2', 'stuff']
+    assert all(row_maj_block_id.tbl.df['stuff'] == 'Stuff in C') 
+
+def create_tbl_df(row_maj_tbl):
+    """
+    Helper function to parse raw data to row_maj_tbl.tbl.df
+    JDL 9/27/24
+    """
+    SetListFirstStartBoundIndex(row_maj_tbl)
+    row_maj_tbl.ParseBlockProcedure()
+    assert len(row_maj_tbl.tbl.df) == 5
+
+def test_blockids_ConvertTupleToList(tbl1):
+    """
+    If only one block_id, it can be specified as tuple; otherwise it's
+    a list of tuples.
+    JDL 9/27/24
+    """
+    #Simulate call after ParseBlockProcedure to set idx_start_data
+    row_maj_block_id = RowMajorBlockID(tbl1, 6)
+
+    #Check input from dParseParams fixture
+    assert isinstance(tbl1.dParseParams['block_id_vars'], tuple)
+
+    #Call method and check conversion to list
+    row_maj_block_id.ConvertTupleToList()
+    assert isinstance(tbl1.dParseParams['block_id_vars'], list)
 

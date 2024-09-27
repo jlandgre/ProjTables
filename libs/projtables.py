@@ -206,6 +206,7 @@ class RowMajorTbl():
 
         #Table whose df is to be populated by parsing
         self.tbl = tbl
+        self.lst_block_ids = []
 
         #Start, header, end, first data row indices for current block in loop
         self.idx_start_current = None
@@ -234,6 +235,10 @@ class RowMajorTbl():
         for i in self.start_bound_indices:
             self.idx_start_current = i
             self.ParseBlockProcedure()
+
+        #Extract block_id values if specified
+        self.tbl.df, self.lst_block_ids = RowMajorBlockID(self.tbl, \
+                                        self.idx_start_data).ExtractBlockIDs
 
         #set default index
         self.SetDefaultIndex()
@@ -362,3 +367,81 @@ class RowMajorTbl():
         """
         if len(self.tbl.import_col_map) > 0:
             self.df_block.rename(columns=self.tbl.import_col_map, inplace=True)
+
+"""
+================================================================================
+RowMajorBlockID Class - sub to RowMajorTbl for extracting block_id values
+================================================================================
+"""
+class RowMajorBlockID:
+    def __init__(self, tbl, idx_start_data):
+        self.tbl = tbl
+        self.idx_start_data = idx_start_data
+
+        #Within loop value for a block ID
+        self.block_id_value = None
+
+        #List of all block_id names
+        self.df_cols_initial = self.tbl.df.columns.tolist()
+        self.block_id_names = []
+
+    @property
+    def ExtractBlockIDs(self):
+        """
+        Property returns updated DataFrame and list of names.
+        JDL 9/27/24
+        """
+        self.ExtractBlockIDsProcedure()
+        return self.tbl.df, self.block_id_names
+    """
+    ============================================================================
+    """
+    def ExtractBlockIDsProcedure(self):
+        """
+        Procedure to extract block ID values from df_raw based on current block's
+        data row index and dict list of block_id tuples: (block_id_name, row_offset,
+        col_index) where row_offset is offset from idx_start_data and col_index is 
+        absolute column index where each block_id value is found.
+        JDL 9/27/24
+        """
+        #Convert to list if specified as one-item tuple
+        self.ConvertTupleToList()
+
+        #Iterate through block_id tuples and add columns to tbl.df
+        for tup_block_id in self.tbl.dParseParams.get('block_id_vars', []):
+            self.SetBlockIDValue(tup_block_id)
+            self.ReorderColumns()
+
+    def ConvertTupleToList(self):
+        """
+        If only one block_id, it can be specified as tuple; otherwise it's
+        a list of tuples.
+        JDL 9/27/24
+        """
+        if 'block_id_vars' in self.tbl.dParseParams:
+
+            #If necessary, convert tuple to one-item list
+            if isinstance(self.tbl.dParseParams['block_id_vars'], tuple):
+                self.tbl.dParseParams['block_id_vars'] = \
+                    [self.tbl.dParseParams['block_id_vars']]
+            
+    def SetBlockIDValue(self, tup_block_id):
+        """
+        Set internal values based current block_id tuple
+        JDL 9/27/24
+        """
+        name, row_offset = tup_block_id[0], tup_block_id[1]
+        idx_row, idx_col = self.idx_start_data + row_offset, tup_block_id[2]
+
+        #Set the current value and add the name list
+        value_block_id = self.tbl.df_raw.iloc[idx_row, idx_col]
+        self.block_id_names.append(name)
+        self.tbl.df[name] = value_block_id
+
+    def ReorderColumns(self):
+        """
+        Reorder so that block_id columns are first
+        9/27/24
+        """
+        self.tbl.df = self.tbl.df[self.block_id_names + self.df_cols_initial]
+
